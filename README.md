@@ -12,6 +12,7 @@ OpenWrt / ImmortalWrt 上的轻量 Cloudflare BKK 优选方案。
 - rebuild / refresh 通过 `flock` 单实例化，避免并发覆盖与重复热加载
 - rebuild 采用 **trigger-coalesce**：高频学习期被 skip 的更新会被合并到下一轮，**不丢失**
 - managed hosts 文件使用**分块紧凑布局**（每行最多 15 个 hostname / 约 900 字符），文件体积低且避免 dnsmasq 忽略行尾别名
+- managed hosts 原地覆盖，避免 OpenWrt ujail 下 `mv` 换 inode 后 reload 继续读旧文件
 
 ## 文件
 

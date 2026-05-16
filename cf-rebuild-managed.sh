@@ -116,7 +116,10 @@ while :; do
     cat "$TMP_DIR/cf-bkk-managed.body"
   } > "$TMP_DIR/cf-bkk-managed.hosts.new"
 
-  mv "$TMP_DIR/cf-bkk-managed.hosts.new" "$MANAGED"
+  # OpenWrt may run dnsmasq inside ujail with this file bind-mounted; replacing
+  # the inode with mv can leave dnsmasq reloading an old view. Overwrite in place.
+  cat "$TMP_DIR/cf-bkk-managed.hosts.new" > "$MANAGED"
+  rm -f "$TMP_DIR/cf-bkk-managed.hosts.new"
 
   # reload (SIGHUP) 重读 addn-hosts、清 cache，不重启进程
   if /etc/init.d/dnsmasq reload >/dev/null 2>&1; then
