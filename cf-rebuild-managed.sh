@@ -9,6 +9,8 @@ LOG="$BASE_DIR/cf-bkk-refresh.log"
 TMP_DIR="/tmp/cf-bkk-rebuild"
 LOCK_FILE="/tmp/cf-bkk-rebuild.lock"
 DIRTY_FLAG="/tmp/cf-bkk-rebuild.dirty"
+HOSTS_PER_LINE=15
+HOSTS_LINE_MAX=900
 
 mkdir -p "$BASE_DIR" /etc/dnsmasq.d "$TMP_DIR"
 
@@ -66,14 +68,33 @@ while :; do
     exit 1
   fi
 
-  # 紧凑布局：每行 "IP domain1 domain2 ... domainN"。
+  # 分块紧凑布局：每行 "IP domain1 ... domainN"。
   # dnsmasq 把每行 IP+多 hostname 视为多个 (host,ip) 映射，行为与展开版一致；
-  # 文件体积、shell IO、dnsmasq 解析时间都显著下降（旧版 N=domains*ips 行 →
-  # 新版 N=ips 行）。awk 单次扫描替代 shell 双 while 循环，rebuild 加速 50x+。
+  # 同时限制 hostname 数和字符长度，避免行尾域名不被 dnsmasq 采用。
   awk '
-    NR==FNR { tail = tail " " $0; next }
-    NF      { print $0 tail }
-  ' "$TMP_DIR/domains.txt" "$TMP_DIR/ips.txt" > "$TMP_DIR/cf-bkk-managed.body"
+    NR == FNR {
+      domains[++dc] = $0
+      next
+    }
+    NF {
+      ip = $0
+      line = ip
+      count = 0
+      for (i = 1; i <= dc; i++) {
+        add = " " domains[i]
+        if (count > 0 && (count >= maxhosts || length(line) + length(add) > maxlen)) {
+          print line
+          line = ip
+          count = 0
+        }
+        line = line add
+        count++
+      }
+      if (count > 0) {
+        print line
+      }
+    }
+  ' maxhosts="$HOSTS_PER_LINE" maxlen="$HOSTS_LINE_MAX" "$TMP_DIR/domains.txt" "$TMP_DIR/ips.txt" > "$TMP_DIR/cf-bkk-managed.body"
 
   if [ -f "$MANAGED" ]; then
     sed '1,2d' "$MANAGED" > "$TMP_DIR/cf-bkk-managed.current.body"

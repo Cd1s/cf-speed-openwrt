@@ -3,7 +3,7 @@
 --
 --   默认模式 (无参数):
 --     procd 启动；嗅探 br-lan 的 LAN DNS 查询，对未学过的域名按
---     6h 节流 + 3d 滑动窗口去重，异步派生自身 --learn 子进程做学习。
+--     6h 节流 + 24h 滑动窗口去重，异步派生自身 --learn 子进程做学习。
 --
 --   --learn <domain>:
 --     一次性学习子进程。本模式由 watcher 自旋启动，也可命令行手工调用。
@@ -26,7 +26,7 @@ local SEEN_FILE    = "/tmp/cf-bkk-seen.tsv"
 local ROUTER_DNS   = os.getenv("ROUTER_DNS") or "127.0.0.1"
 
 local THROTTLE_SECONDS  = 21600    -- 6h: 同域名两次学习尝试的最短间隔
-local KEEP_SECONDS      = 259200   -- 3d: seen TSV 保留窗口
+local KEEP_SECONDS      = 86400    -- 24h: seen TSV 保留窗口，仍覆盖 6h 节流
 local COMPACT_INTERVAL  = 200      -- 累计多少次 mark_seen 后整理 seen 文件
 
 -- ================ 通用工具 ================

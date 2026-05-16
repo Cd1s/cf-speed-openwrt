@@ -11,16 +11,16 @@ OpenWrt / ImmortalWrt 上的轻量 Cloudflare BKK 优选方案。
 - 按域名加锁，避免并发学习时互相吞任务
 - rebuild / refresh 通过 `flock` 单实例化，避免并发覆盖与重复热加载
 - rebuild 采用 **trigger-coalesce**：高频学习期被 skip 的更新会被合并到下一轮，**不丢失**
-- managed hosts 文件使用**紧凑布局**（每 IP 一行多 hostname），文件体积、dnsmasq 解析时间显著下降
+- managed hosts 文件使用**分块紧凑布局**（每行最多 15 个 hostname / 约 900 字符），文件体积低且避免 dnsmasq 忽略行尾别名
 
 ## 文件
 
 - `cf-bkk-refresh.sh`：每日并发测速刷新优选 IP（PARALLEL=8）
-- `cf-rebuild-managed.sh`：根据 `domains.txt` + `selected_ips.txt` 紧凑布局重建 dnsmasq hosts（trigger-coalesce + flock）
+- `cf-rebuild-managed.sh`：根据 `domains.txt` + `selected_ips.txt` 分块紧凑布局重建 dnsmasq hosts（trigger-coalesce + flock，单行长度封顶）
 - `cf-domain-watch.lua`：单文件双模式
   - 默认（procd 启动）：嗅探 LAN DNS 查询，节流去重，自旋启动 `--learn` 子进程
   - `--learn <domain>`：一次性学习子进程，CIDR + `/cdn-cgi/trace` 双确认，命中后追加 domains.txt 并触发 rebuild/refresh
-- `cf-maintenance.sh`：裁剪日志、去重域名、规范化 CRLF、清理临时文件
+- `cf-maintenance.sh`：裁剪日志、裁剪 seen TSV、去重域名、规范化 CRLF、清理临时文件
 - `nox-cf-learner.init`：procd 服务脚本
 - `cloudflare-ipv4.txt.example`：Cloudflare IPv4 网段示例
 - `candidates.txt.example`：候选 IP 列表示例
