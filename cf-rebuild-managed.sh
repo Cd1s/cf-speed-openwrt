@@ -6,7 +6,7 @@ DOMAINS_FILE="$BASE_DIR/domains.txt"
 IPS_FILE="$BASE_DIR/selected_ips.txt"
 MANAGED="/etc/dnsmasq.d/cf-bkk-managed.hosts"
 LOG="$BASE_DIR/cf-bkk-refresh.log"
-TMP_DIR="/tmp/cf-bkk-refresh"
+TMP_DIR="/tmp/cf-bkk-rebuild"
 LOCK_FILE="/tmp/cf-bkk-rebuild.lock"
 DIRTY_FLAG="/tmp/cf-bkk-rebuild.dirty"
 
@@ -56,6 +56,16 @@ while :; do
   awk 'NF && $1 !~ /^#/ {print tolower($1)}' "$DOMAINS_FILE" | awk '!seen[$0]++' > "$TMP_DIR/domains.txt"
   awk 'NF && $1 !~ /^#/ {print $1}' "$IPS_FILE" | awk '!seen[$0]++' > "$TMP_DIR/ips.txt"
 
+  if [ ! -s "$TMP_DIR/domains.txt" ]; then
+    log "domains file has no usable domains: $DOMAINS_FILE"
+    exit 1
+  fi
+
+  if [ ! -s "$TMP_DIR/ips.txt" ]; then
+    log "selected IP file has no usable IPs: $IPS_FILE"
+    exit 1
+  fi
+
   # 紧凑布局：每行 "IP domain1 domain2 ... domainN"。
   # dnsmasq 把每行 IP+多 hostname 视为多个 (host,ip) 映射，行为与展开版一致；
   # 文件体积、shell IO、dnsmasq 解析时间都显著下降（旧版 N=domains*ips 行 →
@@ -68,6 +78,10 @@ while :; do
   if [ -f "$MANAGED" ]; then
     sed '1,2d' "$MANAGED" > "$TMP_DIR/cf-bkk-managed.current.body"
     if cmp -s "$TMP_DIR/cf-bkk-managed.body" "$TMP_DIR/cf-bkk-managed.current.body"; then
+      if [ -f "$DIRTY_FLAG" ]; then
+        log "managed hosts unchanged but dirty flag set, running follow-up"
+        continue
+      fi
       log "managed hosts unchanged"
       # 已是最新状态：消化 dirty 也不需要再跑（数据没有变化）
       rm -f "$DIRTY_FLAG"

@@ -2,9 +2,19 @@
 START=99
 USE_PROCD=1
 
+cleanup_tcpdump() {
+  pids="$(ps w | awk '/[t]cpdump -Uni br-lan -l udp dst port 53/ {print $1}')"
+  [ -n "$pids" ] && kill $pids 2>/dev/null || true
+}
+
 start_service() {
+  cleanup_tcpdump
   procd_open_instance
   procd_set_param command /usr/bin/lua /root/nox-cf-bkk/cf-domain-watch.lua
   procd_set_param respawn
   procd_close_instance
+}
+
+stop_service() {
+  cleanup_tcpdump
 }

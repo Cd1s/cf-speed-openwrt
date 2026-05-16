@@ -223,7 +223,7 @@ end
 -- ================ watcher 主循环 ================
 
 local function run_watcher()
-  local learned, seen = {}, {}
+  local learned, pending, seen = {}, {}, {}
   local last_compact_at, event_count = 0, 0
 
   local function load_domains()
@@ -267,11 +267,14 @@ local function run_watcher()
   end
 
   local function mark_seen(key, now)
+    local had_key = seen[key] ~= nil
     seen[key] = now
-    local f = assert(io.open(SEEN_FILE, "a"))
-    f:write(key, "\t", tostring(now), "\n")
-    f:close()
-    event_count = event_count + 1
+    if not had_key then
+      local f = assert(io.open(SEEN_FILE, "a"))
+      f:write(key, "\t", tostring(now), "\n")
+      f:close()
+      event_count = event_count + 1
+    end
     compact_seen()
   end
 
@@ -295,14 +298,19 @@ local function run_watcher()
   for line in pipe:lines() do
     local domain = line:match("%sA%?%s+([^%s]+)%.%s+%(") or line:match("%sAAAA%?%s+([^%s]+)%.%s+%(")
     domain = normalize_domain(domain)
-    if valid_public_domain(domain) and not learned[domain] then
+    if valid_public_domain(domain) then
       local key = normalize_key(domain)
       local now = os.time()
       local last = seen[key] or 0
-      if now - last >= THROTTLE_SECONDS then
+      if pending[domain] and now - pending[domain] >= THROTTLE_SECONDS then
+        load_domains()
+        pending[domain] = nil
+      end
+      if not learned[domain] and now - last >= THROTTLE_SECONDS then
         -- 乐观标记：避免 learner 子进程跑完前对同一域名重复 spawn；
-        -- 即便 learner 最终拒绝该域名，seen 节流 6h 兜底，到期 throttle 重放
+        -- 即便 learner 最终拒绝该域名，下一次查询会在 seen 节流 6h 后重放
         learned[domain] = true
+        pending[domain] = now
         mark_seen(key, now)
         spawn_learner(domain)
       end
