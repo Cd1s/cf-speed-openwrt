@@ -15,11 +15,12 @@ OpenWrt / ImmortalWrt 上的轻量 Cloudflare BKK 优选方案。
 
 ## 文件
 
-- `cf-bkk-refresh.sh`：每日测速刷新优选 IP
-- `cf-rebuild-managed.sh`：根据 `domains.txt` + `selected_ips.txt` 重建 dnsmasq hosts
-- `cf-domain-learn.sh`：验证域名是否经 Cloudflare，加入学习列表
-- `cf-domain-watch.lua`：监听 DNS 查询并异步触发学习
-- `cf-maintenance.sh`：裁剪日志、去重域名、清理临时文件
+- `cf-bkk-refresh.sh`：每日并发测速刷新优选 IP（PARALLEL=8）
+- `cf-rebuild-managed.sh`：根据 `domains.txt` + `selected_ips.txt` 紧凑布局重建 dnsmasq hosts（trigger-coalesce + flock）
+- `cf-domain-watch.lua`：单文件双模式
+  - 默认（procd 启动）：嗅探 LAN DNS 查询，节流去重，自旋启动 `--learn` 子进程
+  - `--learn <domain>`：一次性学习子进程，CIDR + `/cdn-cgi/trace` 双确认，命中后追加 domains.txt 并触发 rebuild/refresh
+- `cf-maintenance.sh`：裁剪日志、去重域名、规范化 CRLF、清理临时文件
 - `nox-cf-learner.init`：procd 服务脚本
 - `cloudflare-ipv4.txt.example`：Cloudflare IPv4 网段示例
 - `candidates.txt.example`：候选 IP 列表示例
@@ -88,16 +89,23 @@ chmod +x /etc/init.d/nox-cf-learner
 
 ### learner DNS 目标
 
-`cf-domain-learn.sh` 默认用本机 DNS：
+`cf-domain-watch.lua --learn` 默认通过本机 dnsmasq 做正向解析：
 
-```sh
-ROUTER_DNS=${ROUTER_DNS:-127.0.0.1}
+```lua
+ROUTER_DNS = os.getenv("ROUTER_DNS") or "127.0.0.1"
 ```
 
-如需指定其他 DNS，可在运行前导出环境变量：
+如需指定其他 DNS，可在 procd 服务里加环境变量，或手工调用时 export：
 
 ```sh
 export ROUTER_DNS=192.168.1.1
+lua /root/nox-cf-bkk/cf-domain-watch.lua --learn example.com
+```
+
+### 手动学习单个域名
+
+```sh
+lua /root/nox-cf-bkk/cf-domain-watch.lua --learn example.com
 ```
 
 ## 脱敏说明
