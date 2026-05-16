@@ -125,9 +125,12 @@ for line in pipe:lines() do
       local now = os.time()
       local last = seen[key] or 0
       if now - last >= THROTTLE_SECONDS then
+        -- 乐观标记，避免 learner 异步跑完前对同一域名重复 spawn；
+        -- 即使 learner 最终拒绝该域名，seen 节流（默认 6h）会兜底，
+        -- 6h 后过期，由 throttle 重新放行尝试。
+        learned[domain] = true
         mark_seen(key, now)
         spawn_learner(domain)
-        load_domains()
       end
     end
   end

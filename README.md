@@ -7,8 +7,9 @@ OpenWrt / ImmortalWrt 上的轻量 Cloudflare BKK 优选方案。
 - 每天定时从候选 IP 中筛出 20 个可用的 `BKK` Cloudflare IP
 - 用 `dnsmasq addnhosts` 为已学习的 Cloudflare 域名返回优选 IP
 - 监听 LAN 上的 DNS 查询，自动学习新域名
-- 仅在内容实际变化时才重建 hosts 并重启 `dnsmasq`
+- 仅在内容实际变化时才重建 hosts，并通过 `dnsmasq reload`（SIGHUP）热加载，不中断 LAN DNS
 - 按域名加锁，避免并发学习时互相吞任务
+- rebuild / refresh 通过 `flock` 单实例化，避免并发覆盖与重复热加载
 
 ## 文件
 
@@ -51,13 +52,19 @@ mkdir -p /root/nox-cf-bkk /etc/dnsmasq.d
    - `candidates.txt`
    - `cloudflare-ipv4.txt`
    - 空的 `domains.txt`（可选，脚本会自动创建）
-5. 确保 dnsmasq 加载：
+5. 确保 dnsmasq 加载 managed hosts 文件：
 
 ```sh
 uci add_list dhcp.@dnsmasq[0].addnhosts='/etc/dnsmasq.d/cf-bkk-managed.hosts'
 uci commit dhcp
 /etc/init.d/dnsmasq restart
 ```
+
+> ⚠️ **不要省略这一步**。OpenWrt / ImmortalWrt 默认把 `/etc/dnsmasq.d/` 作为
+> `conf-dir` 加载（解析为 dnsmasq 配置语法），而 hosts 文件 `<ip> <domain>`
+> 不是合法的 dnsmasq 配置语法 —— 没有 `addnhosts` 声明的话，文件不仅不会生效，
+> 还可能导致 dnsmasq 启动失败。可以在另一个目录（如 `/etc/cf-bkk/`）
+> 放置 hosts 文件以规避，但需要相应改 `cf-rebuild-managed.sh` 里的 `MANAGED` 路径。
 
 6. 安装 watcher 服务：
 

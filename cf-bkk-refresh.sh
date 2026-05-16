@@ -7,6 +7,7 @@ DOMAINS_FILE="$BASE_DIR/domains.txt"
 IPS_FILE="$BASE_DIR/selected_ips.txt"
 LOG="$BASE_DIR/cf-bkk-refresh.log"
 TMP_DIR="/tmp/cf-bkk-refresh"
+LOCK_FILE="/tmp/cf-bkk-refresh.lock"
 TARGET_COUNT=20
 MIN_COUNT=5
 TRACE_PATH="/cdn-cgi/trace"
@@ -23,6 +24,13 @@ log() {
 shuffle_file() {
   awk 'BEGIN{srand()} NF{print rand(), $0}' "$1" | sort -k1,1n | cut -d' ' -f2-
 }
+
+# 单实例锁：cron 与 learner 都可能触发，并发会互相覆盖 selected_ips.txt
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  log "refresh already running, skip"
+  exit 0
+fi
 
 rm -f "$TMP_DIR"/*
 
