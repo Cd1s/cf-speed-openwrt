@@ -1,0 +1,17 @@
+# runtime data
+*.log
+*.bak
+*.tmp
+
+# local/generated runtime files
+domains.txt
+selected_ips.txt
+cf-bkk-managed.hosts
+cf-bkk-managed.hosts.bak
+
+# optional private inputs
+cloudflare-ipv4.txt
+candidates.txt
+
+# macOS
+.DS_Store
