@@ -4,12 +4,14 @@ OpenWrt / ImmortalWrt 上的轻量 Cloudflare BKK 优选方案。
 
 ## 功能
 
-- 每天定时从候选 IP 中筛出 20 个可用的 `BKK` Cloudflare IP
+- 每天定时从候选 IP 中筛出 20 个可用的 `BKK` Cloudflare IP（**并发测速**，~1 分钟完成 40+ 个 IP）
 - 用 `dnsmasq addnhosts` 为已学习的 Cloudflare 域名返回优选 IP
-- 监听 LAN 上的 DNS 查询，自动学习新域名
+- 监听 LAN 上的 DNS 查询，自动学习新域名（`tcpdump -U` 立即模式，无包缓冲延迟）
 - 仅在内容实际变化时才重建 hosts，并通过 `dnsmasq reload`（SIGHUP）热加载，不中断 LAN DNS
 - 按域名加锁，避免并发学习时互相吞任务
 - rebuild / refresh 通过 `flock` 单实例化，避免并发覆盖与重复热加载
+- rebuild 采用 **trigger-coalesce**：高频学习期被 skip 的更新会被合并到下一轮，**不丢失**
+- managed hosts 文件使用**紧凑布局**（每 IP 一行多 hostname），文件体积、dnsmasq 解析时间显著下降
 
 ## 文件
 

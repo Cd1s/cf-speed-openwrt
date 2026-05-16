@@ -10,6 +10,8 @@ TMP_DIR="/tmp/cf-bkk-refresh"
 LOCK_FILE="/tmp/cf-bkk-refresh.lock"
 TARGET_COUNT=20
 MIN_COUNT=5
+MIN_SPEED=102400          # 字节/秒；低于此速的 IP 即便着陆 BKK 也不选
+PARALLEL=8                 # 并发测速线程数
 TRACE_PATH="/cdn-cgi/trace"
 DOWN_PATH="/__down?bytes=1000000"
 HOST_HEADER="Host: speed.cloudflare.com"
@@ -22,10 +24,36 @@ log() {
 }
 
 shuffle_file() {
-  awk 'BEGIN{srand()} NF{print rand(), $0}' "$1" | sort -k1,1n | cut -d' ' -f2-
+  # 过滤空行和 # 注释
+  awk 'BEGIN{srand()} NF && $1 !~ /^#/ {print rand(), $1}' "$1" | sort -k1,1n | cut -d' ' -f2-
 }
 
-# 单实例锁：cron 与 learner 都可能触发，并发会互相覆盖 selected_ips.txt
+# 测一个 IP；输出 "ip speed ttfb conn total" 到 stdout
+test_one_ip() {
+  ip="$1"
+  trace="$(curl -fsS --connect-timeout 2 --max-time 4 -H "$HOST_HEADER" "http://$ip$TRACE_PATH" 2>/dev/null || true)"
+  colo="$(printf '%s\n' "$trace" | sed -n 's/^colo=//p' | head -n1)"
+  [ "$colo" = "BKK" ] || return 0
+
+  metrics="$(curl -fsS --connect-timeout 2 --max-time 8 -H "$HOST_HEADER" -o /dev/null \
+             -w '%{http_code} %{time_connect} %{time_starttransfer} %{time_total} %{speed_download}\n' \
+             "http://$ip$DOWN_PATH" 2>/dev/null || true)"
+  set -- $metrics
+  code="${1:-0}"
+  conn="${2:-9}"
+  ttfb="${3:-9}"
+  total="${4:-9}"
+  speed="${5:-0}"
+  [ "$code" = "200" ] || return 0
+
+  # 速度门槛（速度 < MIN_SPEED 的 IP 即便着陆 BKK 也不选）
+  awk -v s="$speed" -v m="$MIN_SPEED" 'BEGIN{exit !(s+0 >= m+0)}' || return 0
+
+  # POSIX: <PIPE_BUF (512) 的 write() 是原子的，并发 >> 不会撕裂
+  printf '%s %s %s %s %s\n' "$ip" "$speed" "$ttfb" "$conn" "$total"
+}
+
+# 单实例锁：cron 与 learner 都可能触发
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "refresh already running, skip"
@@ -42,24 +70,22 @@ fi
 shuffle_file "$CANDIDATES" > "$TMP_DIR/candidates.shuffled"
 : > "$TMP_DIR/results.txt"
 
+# 并发测速：每批 PARALLEL 个，写入结果到同一文件（行级原子）
+N=0
 while IFS= read -r ip; do
   [ -n "$ip" ] || continue
-
-  trace="$(curl -fsS --connect-timeout 2 --max-time 4 -H "$HOST_HEADER" "http://$ip$TRACE_PATH" 2>/dev/null || true)"
-  colo="$(printf '%s\n' "$trace" | sed -n 's/^colo=//p' | head -n1)"
-  [ "$colo" = "BKK" ] || continue
-
-  metrics="$(curl -fsS --connect-timeout 2 --max-time 8 -H "$HOST_HEADER" -o /dev/null -w '%{http_code} %{time_connect} %{time_starttransfer} %{time_total} %{speed_download}\n' "http://$ip$DOWN_PATH" 2>/dev/null || true)"
-  set -- $metrics
-  code="${1:-0}"
-  conn="${2:-9}"
-  ttfb="${3:-9}"
-  total="${4:-9}"
-  speed="${5:-0}"
-  [ "$code" = "200" ] || continue
-
-  printf '%s %s %s %s %s\n' "$ip" "$speed" "$ttfb" "$conn" "$total" >> "$TMP_DIR/results.txt"
+  case "$ip" in
+    *.*.*.*) ;;
+    *) continue ;;
+  esac
+  ( test_one_ip "$ip" >> "$TMP_DIR/results.txt" ) &
+  N=$((N+1))
+  if [ "$N" -ge "$PARALLEL" ]; then
+    wait
+    N=0
+  fi
 done < "$TMP_DIR/candidates.shuffled"
+wait
 
 if [ ! -s "$TMP_DIR/results.txt" ]; then
   log "no BKK candidates survived testing; keeping existing file"

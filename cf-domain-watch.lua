@@ -113,7 +113,10 @@ ensure_file(SEEN_FILE)
 load_domains()
 load_seen()
 
-local cmd = "tcpdump -ni br-lan -l 'udp dst port 53' 2>/dev/null"
+-- -U (immediate mode) 关闭 libpcap 的 4KB 内部缓冲：DNS 包小 (~70B)，无 -U 时
+-- 低流量场景需要积累 ~60 个包才 flush，学习器可能延迟数分钟才被触发。
+-- -l 是 stdout 行缓冲，与 -U (包级 flush) 配合才能让单个 DNS 查询立刻可见。
+local cmd = "tcpdump -Uni br-lan -l 'udp dst port 53' 2>/dev/null"
 local pipe = assert(io.popen(cmd, "r"))
 
 for line in pipe:lines() do

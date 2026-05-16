@@ -33,15 +33,17 @@ fi
 # 清理刷新过程临时文件
 find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
 
-# 去重已学习域名
+# 去重已学习域名，并清掉 CRLF 行尾（用户手工编辑可能引入 \r）
 if [ -f "$DOMAINS_FILE" ]; then
-  awk 'NF && $1 !~ /^#/ {print tolower($1)}' "$DOMAINS_FILE" | awk '!seen[$0]++' > "$DOMAINS_FILE.tmp"
+  tr -d '\r' < "$DOMAINS_FILE" \
+    | awk 'NF && $1 !~ /^#/ {print tolower($1)}' \
+    | awk '!seen[$0]++' > "$DOMAINS_FILE.tmp"
   mv "$DOMAINS_FILE.tmp" "$DOMAINS_FILE"
 fi
 
 trim_log "$REFRESH_LOG"
 trim_log "$LEARN_LOG"
-rm -f /tmp/dnsmasq.log /tmp/dnsmasq-queries.log /tmp/cf-watch-test.log /tmp/cf-learn-debug.out /tmp/cf-bkk-watch.fifo 2>/dev/null || true
+rm -f /tmp/dnsmasq.log /tmp/dnsmasq-queries.log /tmp/cf-watch-test.log /tmp/cf-learn-debug.out /tmp/cf-bkk-watch.fifo /tmp/cf-bkk-rebuild.dirty 2>/dev/null || true
 
 printf '[%s] cleanup done: %s base, %s seen\n' "$(date '+%F %T')" \
   "$(du -sh "$BASE_DIR" 2>/dev/null | awk '{print $1}')" \
